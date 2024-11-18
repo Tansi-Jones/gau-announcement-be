@@ -1,2 +1,3 @@
 Flask==3.0.3
-uuid==11.0.3
+sqlite3
+uuid==1.30
