@@ -1,3 +1,4 @@
-Flask==3.0.3
+flask
 sqlite3
-uuid==1.30
+uuid
+datetime
