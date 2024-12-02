@@ -128,8 +128,8 @@ def get_user_by_email(email):
 
 ### ANNOUNCEMENT ENDPOINTS ###
 
-@app.route('/announcements', methods=['GET'])
-def get_announcements():
+@app.route('/announcements/admin', methods=['GET'])
+def get_all_announcements():
     conn = get_db_connection()
     announcements = conn.execute('''
         SELECT 
@@ -147,6 +147,35 @@ def get_announcements():
         JOIN Users u ON a.announcerId = u.id
         ORDER BY a.isUrgent DESC, a.endDate ASC
     ''').fetchall()
+    conn.close()
+    return jsonify([dict(row) for row in announcements])
+
+
+@app.route('/announcements', methods=['GET'])
+def get_announcements():
+    conn = get_db_connection()
+    
+    # Get the current date (ignoring time) to compare against endDate
+    current_date = datetime.now().strftime('%Y-%m-%d')
+
+    announcements = conn.execute('''
+        SELECT 
+            a.id, 
+            a.title, 
+            a.body, 
+            a.startDate, 
+            a.endDate, 
+            a.image, 
+            a.isUrgent, 
+            u.name AS announcer,
+            a.createdAt,
+            a.updatedAt
+        FROM Announcements a
+        JOIN Users u ON a.announcerId = u.id
+        WHERE a.endDate >= ?
+        ORDER BY a.isUrgent DESC, a.endDate ASC
+    ''', (current_date,)).fetchall()
+    
     conn.close()
     return jsonify([dict(row) for row in announcements])
 
@@ -189,12 +218,54 @@ def create_announcement():
 @app.route('/announcements/<id>', methods=['DELETE'])
 def delete_announcement(id):
     conn = get_db_connection()
-    result = conn.execute('DELETE FROM Announcements WHERE id = ?', (id,))
-    conn.commit()
+
+    # Fetch the announcement details before deleting it
+    announcement = conn.execute('''
+        SELECT 
+            a.id, 
+            a.title, 
+            a.body, 
+            a.startDate, 
+            a.endDate, 
+            a.image, 
+            a.isUrgent, 
+            u.name AS announcerName,  -- We get the announcer's name here
+            a.createdAt,
+            a.updatedAt
+        FROM Announcements a
+        JOIN Users u ON a.announcerId = u.id
+        WHERE a.id = ?
+    ''', (id,)).fetchone()
+
+    if announcement:
+        # Insert the announcement into the Archive table
+        conn.execute('''
+            INSERT INTO Archive (
+                id, title, body, image, startDate, endDate, announcerName, createdAt, updatedAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            announcement['id'],
+            announcement['title'],
+            announcement['body'],
+            announcement['image'],
+            announcement['startDate'],
+            announcement['endDate'],
+            announcement['announcerName'],  # We store the announcer's name here
+            announcement['createdAt'],
+            announcement['updatedAt']
+        ))
+
+        # Now delete the announcement from the Announcements table
+        result = conn.execute('DELETE FROM Announcements WHERE id = ?', (id,))
+        conn.commit()
+        conn.close()
+
+        if result.rowcount:
+            return jsonify({'message': 'Announcement deleted and archived', 'type': 'success'})
+        return jsonify({'message': 'Announcement not found in the database', 'type': 'error'}), 404
+
     conn.close()
-    if result.rowcount:
-        return jsonify({'message': 'Announcement deleted', 'type':'success'})
-    return jsonify({'message': 'Announcement not found', 'type':'error'}), 404
+    return jsonify({'message': 'Announcement not found', 'type': 'error'}), 404
 
 
 @app.route('/announcements/<id>', methods=['PATCH'])
@@ -243,6 +314,34 @@ def edit_announcement(id):
     return jsonify({"message": "Announcement not found", 'type':'error'}), 404
 
 
+@app.route('/announcements/announcer/<id>', methods=['GET'])
+def get_announcements_by_announcer(id):
+    conn = get_db_connection()
+
+    # Fetch announcements for the specific announcer (by announcerId)
+    announcements = conn.execute('''
+        SELECT 
+            a.id, 
+            a.title, 
+            a.body, 
+            a.startDate, 
+            a.endDate, 
+            a.image, 
+            a.isUrgent, 
+            u.name AS announcer,
+            a.createdAt,
+            a.updatedAt
+        FROM Announcements a
+        JOIN Users u ON a.announcerId = u.id
+        WHERE a.announcerId = ?
+        ORDER BY a.isUrgent DESC, a.endDate ASC
+    ''', (id,)).fetchall()
+
+    conn.close()
+
+    # Return the fetched announcements as JSON
+    return jsonify([dict(row) for row in announcements])
+
 
 if __name__ == '__main__':
-    app.run()
+    app.run(debug=True)
