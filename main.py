@@ -22,7 +22,7 @@ def get_current_timestamp():
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 
-### USERS ENDPOINTS ###
+### USERS ENDPOINTS ####
 
 @app.route('/users', methods=['GET'])
 def get_users():
